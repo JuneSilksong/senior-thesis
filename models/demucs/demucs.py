@@ -1,10 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import matplotlib.pyplot as plt
-import typing as tp
 import math
-import julius
 
 class Demucs(nn.Module):
     def __init__(self,
@@ -18,6 +15,7 @@ class Demucs(nn.Module):
                  # Convolutions
                  kernel_size=8,
                  stride=4,
+                 context=1,
                  # Normalization
                  norm_groups=4
                  ):
@@ -29,6 +27,7 @@ class Demucs(nn.Module):
         self.depth = depth
         self.kernel_size = kernel_size
         self.stride = stride
+        self.context = context
         self.encoder = nn.ModuleList()
         self.decoder = nn.ModuleList()
 
@@ -57,7 +56,7 @@ class Demucs(nn.Module):
                 out_channels = in_channels
                 decode += [
                     # Conv 1
-                    nn.Conv1d(channels, 2*channels, 3, 1, padding=1),
+                    nn.Conv1d(channels, 2*channels, 2*context+1, 1, padding=context),
                     nn.GroupNorm(norm_groups, 2*channels),
                     nn.GLU(dim=1),
                     # Conv 2
@@ -69,7 +68,7 @@ class Demucs(nn.Module):
                 out_channels = len(self.sources) * audio_channels
                 decode += [
                     # Conv 1
-                    nn.Conv1d(channels, 2*channels, 3, 1, padding=1),
+                    nn.Conv1d(channels, 2*channels, 2*context+1, 1, padding=context),
                     nn.GroupNorm(norm_groups, 2*channels),
                     nn.GLU(dim=1),
                     # Conv 2 (without activation)
@@ -109,7 +108,7 @@ class Demucs(nn.Module):
             print("Encoded shape: ", x.shape)
 
         # Bidirectional LSTM
-        x = x.permute(2, 0, 1) # takes tensor of shape (T, B, C)
+        x = x.permute(2, 0, 1) # LSTM takes tensor of shape (T, B, C)
         x = self.lstm(x)[0]
         print("LSTM shape:    ", x.permute(1, 2, 0).shape)
         x = self.linear(x)
@@ -122,4 +121,6 @@ class Demucs(nn.Module):
             x = decode(x + skip)
             print("Decoded shape: ", x.shape)
         
+        x = x[..., delta // 2:-(delta - delta // 2)]
+
         return x
