@@ -4,109 +4,122 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import typing as tp
 import math
-
-def center_trim(tensor: torch.Tensor, reference: tp.Union[torch.Tensor, int]):
-    """
-    Center trim `tensor` with respect to `reference`, along the last dimension.
-    `reference` can also be a number, representing the length to trim to.
-    If the size difference != 0 mod 2, the extra sample is removed on the right side.
-    """
-    ref_size: int
-    if isinstance(reference, torch.Tensor):
-        ref_size = reference.size(-1)
-    else:
-        ref_size = reference
-    delta = tensor.size(-1) - ref_size
-    if delta < 0:
-        raise ValueError("tensor must be larger than reference. " f"Delta is {delta}.")
-    if delta:
-        tensor = tensor[..., delta // 2:-(delta - delta // 2)]
-    return tensor
-
-
-def enc_block(c_in, c_out, kernel=4, stride=2, norm_groups=4):
-    return nn.Sequential(
-        nn.Conv1d(c_in, c_out, kernel_size=kernel, stride=stride, padding=kernel//2),
-        nn.GroupNorm(norm_groups, c_out),
-        nn.GELU()
-    )
-
-def dec_block(c_in, c_out, kernel=4, stride=2, norm_groups=4):
-    return nn.Sequential(
-        nn.ConvTranspose1d(c_in, c_out, kernel_size=kernel, stride=stride, padding=kernel//2),
-        nn.GroupNorm(norm_groups, c_out),
-        nn.GELU()
-    )
+import julius
 
 class Demucs(nn.Module):
-    def __init__(self):
+    def __init__(self,
+                 sources,
+                 # Channels
+                 audio_channels=2,
+                 channels=64,
+                 growth=2,
+                 # Main structure
+                 depth=6,
+                 # Convolutions
+                 kernel_size=8,
+                 stride=4,
+                 # Normalization
+                 norm_groups=4
+                 ):
         super().__init__()
-        self.enc = nn.ModuleList([
-            enc_block(2,48),
-            enc_block(48,96),
-            enc_block(96,192),
-            enc_block(192,384)
-        ])
-        self.dec = nn.ModuleList([
-            dec_block(384,192),
-            dec_block(192,96),
-            dec_block(96,48),
-            dec_block(48,4*2*2)
-        ])
-        self.resample = True
-        self.depth = 4
-        self.kernel_size = 8
-        self.stride = 4
-        self.sources = ["one","two"]
-        self.audio_channels = 2
+        self.sources = sources
+        self.audio_channels = audio_channels
+        self.channels = channels
+        self.growth = growth
+        self.depth = depth
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.encoder = nn.ModuleList()
+        self.decoder = nn.ModuleList()
 
+        in_channels = audio_channels
+        padding = 0
+
+        for index in range(depth):
+            # Encoder
+            encode = []
+            encode += [
+                # Conv 1
+                nn.Conv1d(in_channels, channels, kernel_size, stride),
+                nn.GroupNorm(norm_groups, channels),
+                nn.ReLU(),
+                # Conv 2
+                nn.Conv1d(channels, 2*channels, 1, 1),
+                nn.GroupNorm(norm_groups, 2*channels),
+                nn.GLU(dim=1),
+            ]
+
+            self.encoder.append(nn.Sequential(*encode))
+
+            # Decoder
+            decode = []
+            if index > 0:
+                out_channels = in_channels
+                decode += [
+                    # Conv 1
+                    nn.Conv1d(channels, 2*channels, 3, 1, padding=1),
+                    nn.GroupNorm(norm_groups, 2*channels),
+                    nn.GLU(dim=1),
+                    # Conv 2
+                    nn.ConvTranspose1d(channels, out_channels, kernel_size, stride),
+                    nn.GroupNorm(norm_groups, out_channels),
+                    nn.ReLU(),
+                ]
+            else:
+                out_channels = len(self.sources) * audio_channels
+                decode += [
+                    # Conv 1
+                    nn.Conv1d(channels, 2*channels, 3, 1, padding=1),
+                    nn.GroupNorm(norm_groups, 2*channels),
+                    nn.GLU(dim=1),
+                    # Conv 2 (without activation)
+                    nn.ConvTranspose1d(channels, out_channels, kernel_size, stride),
+                ]
+
+            self.decoder.insert(0, nn.Sequential(*decode))
+
+            in_channels = channels
+            channels = growth*channels
+        
+        self.lstm = nn.LSTM(input_size=in_channels, hidden_size=in_channels, num_layers=2, bidirectional=True)
+        self.linear = nn.Linear(2 * in_channels, in_channels)
+    
     def valid_length(self, length):
-        """
-        Return the nearest valid length to use with the model so that
-        there is no time steps left over in a convolution, e.g. for all
-        layers, size of the input - kernel_size % stride = 0.
-
-        Note that input are automatically padded if necessary to ensure that the output
-        has the same length as the input.
-        """
-        if self.resample:
-            length *= 2
-
         for _ in range(self.depth):
             length = math.ceil((length - self.kernel_size) / self.stride) + 1
             length = max(1, length)
 
-        for idx in range(self.depth):
+        for _ in range(self.depth):
             length = (length - 1) * self.stride + self.kernel_size
 
-        if self.resample:
-            length = math.ceil(length / 2)
         return int(length)
-    
-    def forward(self, x):
-        # Time-domain path
-        length = x.shape[-1]
-        
-        mono = x.mean(dim=1, keepdim=True)
-        mean = mono.mean(dim=-1, keepdim=True)
-        std = mono.std(dim=-1, keepdim=True)
-        x = (x - mean) / (1e-5 + std)
 
+    def forward(self, x):
+        # Get valid L_in (T)
+        length = x.shape[-1] # (B, C, T) -> T
         delta = self.valid_length(length) - length
         x = F.pad(x, (delta // 2, delta - delta // 2))
+        print("Initial shape: ", x.shape)
 
+        # Encode
         saved = []
-        for encoder in self.enc:
-            x = encoder(x)
+        for encode in self.encoder:
+            x = encode(x)
             saved.append(x)
+            print("Encoded shape: ", x.shape)
 
-        # Decoding
-        for decoder in self.dec:
+        # Bidirectional LSTM
+        x = x.permute(2, 0, 1) # takes tensor of shape (T, B, C)
+        x = self.lstm(x)[0]
+        print("LSTM shape:    ", x.permute(1, 2, 0).shape)
+        x = self.linear(x)
+        x = x.permute(1, 2, 0) # return to (B, C, T)
+        print("Linear shape:  ", x.shape)
+        
+        # Decode
+        for decode in self.decoder:
             skip = saved.pop(-1)
-            skip = center_trim(skip,x)
-            x = decoder(x + skip)
-
-        x = x * std + mean
-        x = center_trim(x, length)
-        x = x.view(x.size(0), len(self.sources), self.audio_channels, x.size(-1))
+            x = decode(x + skip)
+            print("Decoded shape: ", x.shape)
+        
         return x
