@@ -1,25 +1,22 @@
-import torch
+import numpy as np
+np.float_ = np.float64
+import musdb
 import matplotlib.pyplot as plt
-from demucs import Demucs  # adjust import if needed
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+from torch import optim
+from demucs import Demucs
 
-# Create random stereo waveform: [B, C, T]
-B, C, T = 1, 2, 160000  # 1-second stereo at 16kHz
-waveform = torch.randn(B, C, T)
+DATA_PATH = 'D:/GitHub/senior-thesis/musdb18/'
 
-# Initialize model
-model = Demucs(sources=["Guitar", "Vocals", "Drums"])
+model = Demucs(sources=["drums", "bass", "other", "vocals"])
+model.load_state_dict(torch.load("demucs_checkpoint.pth", map_location="cuda" if torch.cuda.is_available() else "cpu"))
+model.eval()
+model.to("cuda" if torch.cuda.is_available() else "cpu")
 
-# Run forward pass
-with torch.no_grad():
-    output, y = model(waveform)
+mus = musdb.DB(root=DATA_PATH, is_wav=False)
+track = mus[0]
 
-# Plot input and output for first channel
-plt.figure(figsize=(12, 4))
-plt.subplot(1, 2, 1)
-plt.title("input")
-plt.plot(y[0, 0].cpu().numpy())
-plt.subplot(1, 2, 2)
-plt.title("output")
-plt.plot(output[0, 0].cpu(). numpy())
-plt.tight_layout()
-plt.show()
+print(track.name)
