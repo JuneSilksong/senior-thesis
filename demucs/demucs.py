@@ -1,6 +1,22 @@
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+import julius
+
+def rescale_conv(conv, reference):
+    """Rescale initial weight scale. It is unclear why it helps but it certainly does.
+    """
+    std = conv.weight.std().detach()
+    scale = (std / reference)**0.5
+    conv.weight.data /= scale
+    if conv.bias is not None:
+        conv.bias.data /= scale
+
+
+def rescale_module(module, reference):
+    for sub in module.modules():
+        if isinstance(sub, (nn.Conv1d, nn.ConvTranspose1d, nn.Conv2d, nn.ConvTranspose2d)):
+            rescale_conv(sub, reference)
 
 class Demucs(nn.Module):
     def __init__(self,
@@ -16,7 +32,12 @@ class Demucs(nn.Module):
                  stride=4,
                  context=1,
                  # Normalization
-                 norm_groups=4
+                 norm_groups=4,
+                 # Pre/post processing
+                 normalize=True,
+                 resample=True,
+                 # Weight initializaiton
+                 rescale = 0.1,
                  ):
         super().__init__()
         self.sources = sources
@@ -29,6 +50,11 @@ class Demucs(nn.Module):
         self.context = context
         self.encoder = nn.ModuleList()
         self.decoder = nn.ModuleList()
+
+        self.normalize = normalize
+        self.resample = resample
+
+        self.rescale = rescale
 
         in_channels = audio_channels
         padding = 0
@@ -81,45 +107,68 @@ class Demucs(nn.Module):
         
         self.lstm = nn.LSTM(input_size=in_channels, hidden_size=in_channels, num_layers=2, bidirectional=True)
         self.linear = nn.Linear(2 * in_channels, in_channels)
+
+        if rescale:
+            rescale_module(self, reference=rescale)
     
     def valid_length(self, length):
+
+        if self.resample:
+            length *= 2
+
         for _ in range(self.depth):
             length = math.ceil((length - self.kernel_size) / self.stride) + 1
             length = max(1, length)
 
         for _ in range(self.depth):
             length = (length - 1) * self.stride + self.kernel_size
+        
+        if self.resample:
+            length = math.ceil(length/2)
 
         return int(length)
 
     def forward(self, x):
         # Get valid L_in (T)
         length = x.shape[-1] # (B, C, T) -> T
+
+        if self.normalize:
+            mono = x.mean(dim=1, keepdim=True)
+            mean = mono.mean(dim=-1, keepdim=True)
+            std = mono.std(dim=-1, keepdim=True)
+            x = (x - mean) / (1e-5 + std)
+        else:
+            mean = 0
+            std = 1
+        
         delta = self.valid_length(length) - length
         x = F.pad(x, (delta // 2, delta - delta // 2))
-        #print("Initial shape: ", x.shape)
+
+        if self.resample:
+            x = julius.resample_frac(x, 1, 2)
 
         # Encode
         saved = []
         for encode in self.encoder:
             x = encode(x)
             saved.append(x)
-            #print("Encoded shape: ", x.shape)
 
         # Bidirectional LSTM
         x = x.permute(2, 0, 1) # LSTM takes tensor of shape (T, B, C)
         x = self.lstm(x)[0]
-        #print("LSTM shape:    ", x.permute(1, 2, 0).shape)
         x = self.linear(x)
         x = x.permute(1, 2, 0) # return to (B, C, T)
-        #print("Linear shape:  ", x.shape)
         
         # Decode
         for decode in self.decoder:
             skip = saved.pop(-1)
             x = decode(x + skip)
-            #print("Decoded shape: ", x.shape)
 
+        if self.resample:
+            x = julius.resample_frac(x, 2, 1)    
+
+        x = x * std + mean
         x = x[..., delta // 2:-(delta - delta // 2)]
+        x = x.view(x.size(0), len(self.sources), self.audio_channels, x.size(-1))
 
         return x
