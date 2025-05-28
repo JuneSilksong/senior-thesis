@@ -69,7 +69,7 @@ def compare_sources(sources, est_sources):
     fig, axs = plt.subplots(4, 2, figsize=(10,8), sharex=True, sharey=True)
     colors = ["red", "blue", "green", "orange"]
     source_names = ["vocals","drums","bass","other"]
-    for i in range(4):
+    for i in range(len(sources[0])):
         for j, data in enumerate([sources, est_sources]):
             axs[i,j].plot(data[0,i,0].detach().cpu(), color=colors[i])
             axs[i,j].set_title(source_names[i])
