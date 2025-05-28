@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
@@ -98,29 +97,29 @@ class Demucs(nn.Module):
         length = x.shape[-1] # (B, C, T) -> T
         delta = self.valid_length(length) - length
         x = F.pad(x, (delta // 2, delta - delta // 2))
-        print("Initial shape: ", x.shape)
+        #print("Initial shape: ", x.shape)
 
         # Encode
         saved = []
         for encode in self.encoder:
             x = encode(x)
             saved.append(x)
-            print("Encoded shape: ", x.shape)
+            #print("Encoded shape: ", x.shape)
 
         # Bidirectional LSTM
         x = x.permute(2, 0, 1) # LSTM takes tensor of shape (T, B, C)
         x = self.lstm(x)[0]
-        print("LSTM shape:    ", x.permute(1, 2, 0).shape)
+        #print("LSTM shape:    ", x.permute(1, 2, 0).shape)
         x = self.linear(x)
         x = x.permute(1, 2, 0) # return to (B, C, T)
-        print("Linear shape:  ", x.shape)
+        #print("Linear shape:  ", x.shape)
         
         # Decode
         for decode in self.decoder:
             skip = saved.pop(-1)
             x = decode(x + skip)
-            print("Decoded shape: ", x.shape)
-        
+            #print("Decoded shape: ", x.shape)
+
         x = x[..., delta // 2:-(delta - delta // 2)]
 
         return x
