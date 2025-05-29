@@ -3,7 +3,7 @@ np.float_ = np.float64
 import musdb
 import torch
 from torch.utils.data import Dataset
-
+import librosa
 import matplotlib.pyplot as plt
 
 DATA_PATH = 'D:/GitHub/senior-thesis/musdb18'
@@ -65,14 +65,30 @@ def display_sources(track):
     plt.tight_layout()
     plt.show()
 
-def compare_sources(sources, est_sources):
+def compare_sources(sources, est_sources, mode: str = "waveform"):
     fig, axs = plt.subplots(4, 2, figsize=(10,8), sharex=True, sharey=True)
     colors = ["red", "blue", "green", "orange"]
     source_names = ["vocals","drums","bass","other"]
-    for i in range(len(sources[0])):
-        for j, data in enumerate([sources, est_sources]):
-            axs[i,j].plot(data[0,i,0].detach().cpu(), color=colors[i])
-            axs[i,j].set_title(source_names[i])
-            axs[i,j].set_ylabel("Amplitude")
+    if mode not in ["waveform", "spectrogram"]:
+        print("Invalid mode")
+        return -1
+    if mode == "waveform":
+        for i in range(len(sources[0])):
+            for j, data in enumerate([sources, est_sources]):
+                axs[i,j].plot(data[0,i,0].detach().cpu(), color=colors[i])
+                axs[i,j].set_title(source_names[i])
+                axs[i,j].set_ylabel("Amplitude")
+    else:
+        for i in range(len(sources[0])):
+            for j, data in enumerate([sources, est_sources]):
+                y = data[0,i,0]
+                y = y.detach().cpu().numpy() if isinstance(y, torch.Tensor) else np.asarray(y)
+                y = y.astype(np.float32)
+                D = librosa.stft(y, n_fft=1024, hop_length=512)
+                S_db = librosa.amplitude_to_db(np.abs(D), ref=np.max)
+                img = librosa.display.specshow(S_db, ax=axs[i,j])
+                fig.colorbar(img, ax=axs[i,j])
+                axs[i,j].set_title(source_names[i])
+                axs[i,j].set_ylabel("Frequency (Hz)")
     plt.tight_layout()
     plt.show()
