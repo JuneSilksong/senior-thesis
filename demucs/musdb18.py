@@ -41,6 +41,53 @@ class MUSDB18(Dataset):
         sources = torch.stack(sources, dim=0)
         
         return mix, sources
+
+class MUSDB18_Extended(Dataset):
+    def __init__(self,
+                 root=DATA_PATH,
+                 split="train",
+                 is_wav=False,
+                 segment=11.0,
+                 stride=1
+                 ):
+        super().__init__()
+        self.mus = musdb.DB(root=root, split=split, subsets=split, is_wav=is_wav)
+        self.segment = segment
+        self.stride = stride
+        self.sample_rate = 44100
+
+        self.segment_indices = []
+        for track_idx, track in enumerate(self.mus):
+            max_start = track.duration - self.segment
+            if max_start <= 0:
+                continue
+            num_segments = int(max_start // self.stride) + 1
+            for i in range(num_segments):
+                start = self.stride * i
+                self.segment_indices.append((track_idx, start))
+    
+    def __len__(self):
+        return len(self.segment_indices)
+    
+    def __getitem__(self, idx):
+        track_idx, start = self.segment_indices[idx]
+        track = self.mus[track_idx]
+
+        start_sample = int(start * self.sample_rate)
+        end_sample = start_sample + int(self.segment * self.sample_rate)
+
+        mix_audio = track.audio[start_sample:end_sample]
+        mix = torch.tensor(mix_audio.T, dtype=torch.float32)
+
+        sources = []
+        for source_name in ["vocals", "drums", "bass", "other"]:
+            source_audio = track.targets[source_name].audio[start_sample:end_sample]
+            source = torch.tensor(source_audio.T, dtype=torch.float32)
+            sources.append(source)
+        
+        sources = torch.stack(sources, dim=0)
+        
+        return mix, sources
     
 def display_sources(track):
     fig, axs = plt.subplots(5, 1, figsize=(12,10), sharex=True)
