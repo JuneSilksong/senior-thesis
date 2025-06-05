@@ -5,24 +5,30 @@ import torch.nn.functional as F
 from torch import optim
 from torch.utils.data import DataLoader, Subset
 import matplotlib.pyplot as plt
+import time
 
 from demucs import Demucs
-from musdb18 import MUSDB18, compare_sources
+from musdb18 import MUSDB18, MUSDB18_Extended, compare_sources
+
+time_initial = time.time()
 
 def train():
-    train_dataset = MUSDB18()
+    train_dataset = MUSDB18_Extended()
     #train_dataset = Subset(train_dataset, [0])
     print(f"Dataset size: {len(train_dataset)}")
     train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True, drop_last=True, num_workers=4, pin_memory=True)
     #train_loader = DataLoader(train_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
 
-    model = Demucs(sources=["vocals", "drums", "bass", "other"])
+    time_start = None
+    time_finish = None
+
+    model = Demucs(sources=["vocals", "drums", "bass", "other"], resample=False)
     model.cuda()
     model.train()
 
     batches = int(len(train_dataset)/train_loader.batch_size)
 
-    epochs = 5
+    epochs = 50
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
     for epoch in range(epochs):
@@ -32,17 +38,27 @@ def train():
             sources = sources.cuda()
 
             est_sources = model(mix)
+            torch.cuda.synchronize()
+            time_forward = time.time()
 
             loss = F.l1_loss(est_sources, sources)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            torch.cuda.synchronize()
+            time_backward = time.time()
 
             batch_i += 1
-            print(f"Epoch {epoch+1}/{epochs}, Batch {batch_i}/{batches}, Loss = {loss.item():.4f}")
+            
+            torch.cuda.synchronize()
+            time_finish = time.time()
+            print(f"Forward split: {(time_forward-time_start if time_start else time_forward):.4f}")
+            print(f"Backward split {(time_backward-time_forward):.4f}")
+            print(f"Epoch {epoch+1}/{epochs}, Batch {batch_i}/{batches}, Loss = {loss.item():.4f}, Duration = {(time_finish-time_start if time_start else time_finish):.4f}")
+            time_start = time.time()
+            
         
-        compare_sources(sources, est_sources)
         print(f"Completed Epoch {epoch+1}/{epochs} with Loss = {loss.item():.4f}")
 
     torch.save(model.state_dict(), 'demucs_checkpoint.pth')
