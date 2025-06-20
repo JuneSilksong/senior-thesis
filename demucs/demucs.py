@@ -35,7 +35,7 @@ class Demucs(nn.Module):
                  norm_groups=4,
                  # Pre/post processing
                  normalize=True,
-                 resample=True,
+                 resample=False,
                  # Weight initializaiton
                  rescale = 0.1,
                  ):

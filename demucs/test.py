@@ -10,7 +10,9 @@ from types import SimpleNamespace
 from demucs import Demucs
 from musdb18 import MUSDB18, display_sources
 
-DATA_PATH = 'D:/GitHub/senior-thesis/musdb18/'
+# DATA_PATH = 'D:/GitHub/senior-thesis/musdb18/'
+DATA_PATH = '/home/user/Github/musdb18'
+CHECKPOINT_PATH = '/home/user/Github/senior-thesis/pth/demucs_20250613_10.pth'
 
 mus = DB(root=DATA_PATH, is_wav=False)  # test set has no ground truth
 print(f"Found {len(mus)} tracks.")
@@ -19,7 +21,8 @@ track = mus[0]
 display_sources(track)
 
 model = Demucs(sources=["drums", "bass", "other", "vocals"])
-model.load_state_dict(torch.load("demucs_checkpoint.pth", map_location="cuda" if torch.cuda.is_available() else "cpu"))
+checkpoint = torch.load(CHECKPOINT_PATH, map_location="cuda" if torch.cuda.is_available() else "cpu")
+model.load_state_dict(checkpoint['model_state_dict'])
 model.to("cuda" if torch.cuda.is_available() else "cpu")
 model.eval()
 

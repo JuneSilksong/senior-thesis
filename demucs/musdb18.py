@@ -6,7 +6,8 @@ from torch.utils.data import Dataset
 import librosa
 import matplotlib.pyplot as plt
 
-DATA_PATH = 'D:/GitHub/senior-thesis/musdb18'
+# DATA_PATH = 'D:/GitHub/senior-thesis/musdb18' # Windows
+DATA_PATH = '/home/user/Github/musdb18' # Ubuntu
 
 class MUSDB18(Dataset):
     def __init__(self,
@@ -88,7 +89,7 @@ class MUSDB18_Extended(Dataset):
         sources = torch.stack(sources, dim=0)
         
         return mix, sources
-    
+
 def display_sources(track):
     fig, axs = plt.subplots(5, 1, figsize=(12,10), sharex=True)
     colors = ["gray", "red", "blue", "green", "orange", "gray"]
@@ -138,4 +139,5 @@ def compare_sources(sources, est_sources, mode: str = "waveform"):
                 axs[i,j].set_title(source_names[i])
                 axs[i,j].set_ylabel("Frequency (Hz)")
     plt.tight_layout()
+    plt.title("Ground Truth (left) vs Estimate (right)")
     plt.show()
