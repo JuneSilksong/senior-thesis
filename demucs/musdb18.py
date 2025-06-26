@@ -14,11 +14,12 @@ class MUSDB18(Dataset):
     def __init__(self,
                  root=DATA_PATH,
                  split="train",
+                 subsets="train",
                  is_wav=False,
                  segment=10.0
                  ):
         super().__init__()
-        self.mus = musdb.DB(root=root, split=split, subsets=split, is_wav=is_wav)
+        self.mus = musdb.DB(root=root, subsets=subsets, split=split, is_wav=is_wav)
         self.segment = segment
         self.sample_rate = 44100
     
@@ -48,19 +49,20 @@ class MUSDB18_Extended(Dataset):
     def __init__(self,
                  root=DATA_PATH,
                  split="train",
+                 subsets="train",
                  is_wav=False,
                  segment=11.0,
                  stride=1
                  ):
         super().__init__()
-        self.mus = musdb.DB(root=root, split=split, subsets=split, is_wav=is_wav)
+        self.mus = musdb.DB(root=root, subsets=subsets, split=split, is_wav=is_wav)
         self.segment = segment
         self.stride = stride
         self.sample_rate = 44100
 
         self.segment_indices = []
         for track_idx, track in enumerate(self.mus):
-            max_start = track.duration - self.segment
+            max_start = track.duration - self.segment   
             if max_start <= 0:
                 continue
             num_segments = int(max_start // self.stride) + 1
@@ -95,12 +97,13 @@ class MUSDB18_ExtAugmented(Dataset):
     def __init__(self,
                  root=DATA_PATH,
                  split="train",
+                 subsets="train",
                  is_wav=False,
                  segment=11.0,
                  stride=1
                  ):
         super().__init__()
-        self.mus = musdb.DB(root=root, split=split, subsets=split, is_wav=is_wav)
+        self.mus = musdb.DB(root=root, subsets=subsets, split=split, is_wav=is_wav)
         self.segment = segment
         self.stride = stride
         self.sample_rate = 44100
