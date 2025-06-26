@@ -6,30 +6,28 @@ from torch import optim
 from torch.utils.data import DataLoader, Subset
 import matplotlib.pyplot as plt
 import time
+import csv
 
 from demucs import Demucs
-from musdb18 import MUSDB18, MUSDB18_Extended#, compare_sources
+from musdb18 import MUSDB18, MUSDB18_Extended, MUSDB18_ExtAugmented, collate_fn
 
-#print("Hello")
-print(torch.backends.cudnn.version() if torch.backends.cudnn.version() else "No version")
 time_initial = time.time()
-
-print(torch.cuda.is_available())  # Should return True
-print(torch.cuda.device_count())  # Should return at least 1
 
 num_workers = 16
 
-def train(model_path: str):
-    train_dataset = MUSDB18_Extended(split="train")
-    #train_dataset = Subset(train_dataset, [0])
-    #print(f"Dataset size: {len(train_dataset)}")
-    train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True, drop_last=True, num_workers=num_workers, pin_memory=True)
-    #train_loader = DataLoader(train_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
+model_date = '20250626' #yyyymmdd
+model_epoch = None #'00' # 2sf
+model_path = None #f'/home/user/Github/senior-thesis/demucs_{model_date}_{model_epoch}.pth'
+
+def train():
+    train_dataset = MUSDB18_Extended(subsets="train", split="train")
+    train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True, drop_last=True, num_workers=num_workers, pin_memory=True, collate_fn=collate_fn)
+    print(f"Loaded {len(train_dataset)} training tracks.")
 
     time_start = None
     time_finish = None
 
-    model = Demucs(sources=["vocals", "drums", "bass", "other"], resample=False)
+    model = Demucs(sources=["vocals", "drums", "bass", "other"])
 
     if model_path:
         checkpoint = torch.load(model_path)
@@ -47,7 +45,7 @@ def train(model_path: str):
     if model_path:
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
-        print(f"Starting loaded model from {start_epoch}")
+        print(f"Starting loaded model from epoch {start_epoch}")
 
     for epoch in range(start_epoch,epochs):
         batch_i = 0
@@ -78,8 +76,7 @@ def train(model_path: str):
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict()
-        }, f'demucs_20250613_{epoch+1:02}.pth')
+        }, f'demucs_{model_date}_{epoch+1:02}.pth')
 
 if __name__ == "__main__":
-    model_path = "demucs_20250613_48.pth"
-    train(model_path)
+    train()
