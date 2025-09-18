@@ -167,6 +167,122 @@ class MUSDB18_ExtAugmented(Dataset):
             return -audio
         return audio
 
+class MUSDB18_Denoising(Dataset):
+    def __init__(self,
+                 root=DATA_PATH,
+                 split="train",
+                 is_wav=False,
+                 segment=10.0,
+                 stride=1,
+                 mode="mix",  # "mix" or "stems"
+                 noise_types=("gaussian", "pink", "crackle", "reverb"),
+                 noise_prob=0.7,
+                 snr_range=(5, 20)):
+        super().__init__()
+        self.mus = musdb.DB(root=root, split=split, subsets=split, is_wav=is_wav)
+        self.segment = segment
+        self.stride = stride
+        self.sample_rate = 44100
+        self.noise_types = noise_types
+        self.noise_prob = noise_prob
+        self.snr_range = snr_range
+        self.mode = mode
+        self.source_names = ["vocals", "drums", "bass", "other"]
+
+        # Precompute segment indices
+        self.segment_indices = []
+        for track_idx, track in enumerate(self.mus):
+            max_start = track.duration - self.segment
+            if max_start <= 0:
+                continue
+            num_segments = int(max_start // self.stride) + 1
+            for i in range(num_segments):
+                start = self.stride * i
+                self.segment_indices.append((track_idx, start))
+    
+    def __len__(self):
+        return len(self.segment_indices)
+    
+    def __getitem__(self, idx):
+        track_idx, start = self.segment_indices[idx]
+        track = self.mus[track_idx]
+
+        start_sample = int(start * self.sample_rate)
+        end_sample = start_sample + int(self.segment * self.sample_rate)
+
+        if self.mode == "mix":
+            clean_audio = track.audio[start_sample:end_sample]
+            clean = torch.tensor(clean_audio.T, dtype=torch.float32)
+
+            if random.random() < self.noise_prob:
+                noisy_audio = self.add_noise(clean_audio)
+            else:
+                noisy_audio = clean_audio
+            noisy = torch.tensor(noisy_audio.T, dtype=torch.float32)
+
+            return noisy, clean
+
+        elif self.mode == "stems":
+            clean_stems, noisy_stems = [], []
+            for name in self.source_names:
+                src_audio = track.targets[name].audio[start_sample:end_sample]
+                if random.random() < self.noise_prob:
+                    noisy_audio = self.add_noise(src_audio)
+                else:
+                    noisy_audio = src_audio
+                clean_stems.append(torch.tensor(src_audio.T, dtype=torch.float32))
+                noisy_stems.append(torch.tensor(noisy_audio.T, dtype=torch.float32))
+
+            clean_stems = torch.stack(clean_stems, dim=0)  # (4, 2, T)
+            noisy_stems = torch.stack(noisy_stems, dim=0)
+            return noisy_stems, clean_stems
+
+    def add_noise(self, audio):
+        """Apply random noise/reverb at a target SNR."""
+        noise_type = random.choice(self.noise_types)
+        snr_db = random.uniform(*self.snr_range)
+
+        if noise_type == "gaussian":
+            noise = np.random.randn(*audio.shape)
+        elif noise_type == "pink":
+            noise = self.pink_noise(len(audio), audio.shape[1])
+        elif noise_type == "crackle":
+            noise = (np.random.rand(*audio.shape) < 0.005) * np.random.uniform(-1, 1, audio.shape)
+        elif noise_type == "reverb":
+            return self.apply_reverb(audio)  # reverb modifies signal instead of additive noise
+        else:
+            noise = np.zeros_like(audio)
+
+        # scale noise to desired SNR
+        clean_power = np.mean(audio**2)
+        noise_power = np.mean(noise**2) + 1e-10
+        snr_linear = 10**(snr_db / 10)
+        scale = np.sqrt(clean_power / (snr_linear * noise_power))
+        noisy = audio + scale * noise
+        return np.clip(noisy, -1.0, 1.0)
+
+    def apply_reverb(self, audio):
+        """Convolve with synthetic impulse response (random decay)."""
+        ir_len = random.randint(2000, 8000)  # samples
+        ir = np.random.randn(ir_len) * np.exp(-np.linspace(0, 3, ir_len))  # decaying noise
+        ir /= np.max(np.abs(ir) + 1e-6)
+
+        # convolve each channel
+        rev = []
+        for ch in range(audio.shape[1]):
+            rev_ch = spsig.fftconvolve(audio[:, ch], ir, mode="full")[:len(audio)]
+            rev.append(rev_ch)
+        rev = np.stack(rev, axis=1)
+        return np.clip(rev, -1.0, 1.0)
+
+    def pink_noise(self, n_samples, n_channels=2):
+        uneven = n_samples % 2
+        X = (np.random.randn(n_channels, n_samples // 2 + 1 + uneven) +
+             1j * np.random.randn(n_channels, n_samples // 2 + 1 + uneven))
+        S = np.sqrt(np.arange(len(X[0])) + 1.)  # 1/f spectrum
+        y = np.fft.irfft(X / S, n_samples)
+        return y.T
+
 def display_sources(track):
     fig, axs = plt.subplots(5, 1, figsize=(12,10), sharex=True)
     colors = ["gray", "red", "blue", "green", "orange", "gray"]
