@@ -5,6 +5,8 @@ import torch
 from torch.utils.data import Dataset
 import librosa
 import matplotlib.pyplot as plt
+import random
+import scipy.signal as spsig
 
 DATA_PATH = 'D:/GitHub/senior-thesis/musdb18'
 
@@ -88,7 +90,83 @@ class MUSDB18_Extended(Dataset):
         sources = torch.stack(sources, dim=0)
         
         return mix, sources
+
+class MUSDB18_ExtAugmented(Dataset):
+    def __init__(self,
+                 root=DATA_PATH,
+                 split="train",
+                 is_wav=False,
+                 segment=11.0,
+                 stride=1
+                 ):
+        super().__init__()
+        self.mus = musdb.DB(root=root, split=split, subsets=split, is_wav=is_wav)
+        self.segment = segment
+        self.stride = stride
+        self.sample_rate = 44100
+        self.source_names = ["vocals", "drums", "bass", "other"]
+        self.augment = True
+
+        self.segment_indices = []
+        for track_idx, track in enumerate(self.mus):
+            max_start = track.duration - self.segment
+            if max_start <= 0:
+                continue
+            num_segments = int(max_start // self.stride) + 1
+            for i in range(num_segments):
+                start = self.stride * i
+                self.segment_indices.append((track_idx, start))
     
+    def __len__(self):
+        return len(self.segment_indices)
+    
+    def __getitem__(self, idx):
+        track_idx, start = self.segment_indices[idx]
+        track = self.mus[track_idx]
+
+        offset = random.uniform(0, 1.0)
+        start += offset
+
+        start_sample = int(start * self.sample_rate)
+        end_sample = start_sample + int(self.segment * self.sample_rate)
+
+        sources = []
+        for source_name in self.source_names:
+            source_audio = track.targets[source_name].audio[start_sample:end_sample]
+            if self.augment:
+                source_audio = self.apply_random_scale(source_audio)
+                source_audio = self.apply_random_flip(source_audio)
+                source_audio = self.apply_channel_swap(source_audio)
+            sources.append(source_audio)
+        
+        sources = torch.stack(sources, dim=0)
+
+        shuffled_sources = np.copy(sources)
+        np.random.shuffle(shuffled_sources)
+        mix = np.sum(shuffled_sources, axis=0)
+
+        sources = torch.tensor(sources.transpose(0, 2, 1), dtype=torch.float32)
+        mix = torch.tensor(mix.T, dtype=torch.float32)
+        
+        return mix, sources
+
+    def apply_shuffle(self, audio):
+        pass
+
+    def apply_channel_swap(self, audio):
+        if random.random() < 0.5:
+            return audio[:, [1, 0]]
+        return audio
+
+    def apply_random_scale(self, audio):
+        gain = random.uniform(0.25,1.25)
+        return audio*gain
+
+    def apply_random_flip(self, audio):
+        if random.random() < 0.5:
+            return -audio
+        return audio
+
 def display_sources(track):
     fig, axs = plt.subplots(5, 1, figsize=(12,10), sharex=True)
     colors = ["gray", "red", "blue", "green", "orange", "gray"]
