@@ -169,6 +169,7 @@ class Demucs(nn.Module):
 
         x = x * std + mean
         x = x[..., delta // 2:-(delta - delta // 2)]
-        x = x.view(x.size(0), len(self.sources), self.audio_channels, x.size(-1))
+        x = x.view(x.size(0), self.audio_channels, x.size(-1)) # FOR DAE
+        # x = x.view(x.size(0), len(self.sources), self.audio_channels, x.size(-1)) # FOR SEPARATION
 
         return x
