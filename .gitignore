@@ -2,3 +2,6 @@ models/demucs/tempCodeRunnerFile.py
 /models/demucs/__pycache__
 /musdb18
 *.pyc
+/output
+/pth
+/input
