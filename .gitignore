@@ -1,5 +1,7 @@
-models/demucs/tempCodeRunnerFile.py
-/models/demucs/__pycache__
-/musdb18
+discord-bot/train.log
+.vscode/
 *.pyc
 *.env
+*.csv
+/img
+/pth
