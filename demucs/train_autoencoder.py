@@ -77,11 +77,12 @@ def main():
 
     for epoch in range(start_epoch,epochs):
         loss = train(model, loader, optimizer, config, epoch)
-        print(f"Completed Epoch {epoch+1}/{epochs} with Loss = {loss.item():.4f}")
+        print(f"Completed Epoch {epoch+1}/{epochs} with Loss = {loss:.4f}")
         torch.save({
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict()
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': loss
         }, f'demucs_{model_date}_{epoch+1:02}.pth')
 
 if __name__ == "__main__":
