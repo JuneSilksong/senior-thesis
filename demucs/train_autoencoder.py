@@ -10,14 +10,6 @@ from demucs import Demucs
 from musdb18 import MUSDB18_Denoising
 from loss import si_sdr_loss, mrstft_loss
 
-time_initial = time.time()
-
-num_workers = 16
-
-model_date = '20250925' #yyyymmdd
-model_epoch = None #'00' # 2sf
-model_path = None #f'/home/user/Github/senior-thesis/demucs_{model_date}_{model_epoch}.pth'
-
 def train(model, dataloader, optimizer, config, epoch):
     batch_i = 0
     running = 0
@@ -40,7 +32,7 @@ def train(model, dataloader, optimizer, config, epoch):
 
         batch_i += 1
         
-        if (batch_i % num_workers == 0):
+        if (batch_i % config['num_workers'] == 0):
             time_finish = time.time()
             print(f"Epoch {epoch+1}/{config['epochs']}, Batch {batch_i}/{config['batches']}, Running Loss = {loss.item():.4f}, Duration = {(time_finish-time_start):.4f}")
             time_start = time.time()
@@ -48,9 +40,14 @@ def train(model, dataloader, optimizer, config, epoch):
     return running / len(dataloader)
 
 def main():
-    train_dataset = MUSDB18_Denoising(split="train")
-    train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True, drop_last=True, num_workers=num_workers, pin_memory=True)
-    print(f"Loaded {len(train_dataset)} training tracks.")
+    model_date = '20250925' #yyyymmdd
+    model_epoch = None #'00' # 2sf
+    model_path = None #f'/home/user/Github/senior-thesis/demucs_{model_date}_{model_epoch}.pth'
+    num_workers = 16
+    
+    dataset = MUSDB18_Denoising(split="train")
+    loader = DataLoader(dataset, batch_size=4, shuffle=True, drop_last=True, num_workers=num_workers, pin_memory=True)
+    print(f"Loaded {len(dataset)} training tracks.")
 
     model = Demucs(sources=["mix"])
 
@@ -61,7 +58,7 @@ def main():
     model.cuda()
     model.train()
 
-    batches = int(len(train_dataset)/train_loader.batch_size)
+    batches = int(len(dataset)/loader.batch_size)
 
     start_epoch = 0
     epochs = 50
@@ -74,11 +71,12 @@ def main():
 
     config = {
         'epochs': epochs,
-        'batches': batches
+        'batches': batches,
+        'num_workers': num_workers
     }
 
     for epoch in range(start_epoch,epochs):
-        loss = train(model, train_loader, optimizer, config, epoch)
+        loss = train(model, loader, optimizer, config, epoch)
         print(f"Completed Epoch {epoch+1}/{epochs} with Loss = {loss.item():.4f}")
         torch.save({
             'epoch': epoch,
