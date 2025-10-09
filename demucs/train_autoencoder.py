@@ -53,7 +53,8 @@ def main():
     batches = int(len(dataset)/dataloader.batch_size)
 
     model = Demucs(sources=["mix"])
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=3)
 
     start_epoch = 0
     epochs = 50
@@ -77,6 +78,7 @@ def main():
         print(f"Completed Epoch {epoch+1}/{epochs} with Loss = {loss:.4f}")
     for epoch in range(start_epoch, epochs):
         loss = train(model, dataloader, optimizer, config, epoch)
+        scheduler.step(loss)
         torch.save({
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
