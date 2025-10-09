@@ -13,8 +13,7 @@ from loss import si_sdr_loss, mrstft_loss
 def train(model, dataloader, optimizer, config, epoch):
     batch_i = 0
     running = 0
-    time_start = None
-    time_finish = None
+    time_start = time.time()
 
     for noisy, clean in dataloader:
         noisy = noisy.cuda()
@@ -31,6 +30,7 @@ def train(model, dataloader, optimizer, config, epoch):
         optimizer.step()
 
         batch_i += 1
+        running += loss.item()
         
         if (batch_i % config['num_workers'] == 0):
             time_finish = time.time()
@@ -44,30 +44,28 @@ def main():
     model_epoch = None #'00' # 2sf
     model_path = None #f'/home/user/Github/senior-thesis/demucs_{model_date}_{model_epoch}.pth'
     num_workers = 16
-    
+
     dataset = MUSDB18_Denoising(split="train")
-    loader = DataLoader(dataset, batch_size=4, shuffle=True, drop_last=True, num_workers=num_workers, pin_memory=True)
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, drop_last=True, num_workers=num_workers, pin_memory=True)
     print(f"Loaded {len(dataset)} training tracks.")
 
+    batches = int(len(dataset)/dataloader.batch_size)
+
     model = Demucs(sources=["mix"])
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+
+    start_epoch = 0
+    epochs = 50
 
     if model_path:
         checkpoint = torch.load(model_path)
         model.load_state_dict(checkpoint['model_state_dict'])
-
-    model.cuda()
-    model.train()
-
-    batches = int(len(dataset)/loader.batch_size)
-
-    start_epoch = 0
-    epochs = 50
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
-
-    if model_path:
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
         print(f"Starting loaded model from epoch {start_epoch}")
+
+    model.cuda()
+    model.train()
 
     config = {
         'epochs': epochs,
@@ -75,9 +73,9 @@ def main():
         'num_workers': num_workers
     }
 
-    for epoch in range(start_epoch,epochs):
-        loss = train(model, loader, optimizer, config, epoch)
         print(f"Completed Epoch {epoch+1}/{epochs} with Loss = {loss:.4f}")
+    for epoch in range(start_epoch, epochs):
+        loss = train(model, dataloader, optimizer, config, epoch)
         torch.save({
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
