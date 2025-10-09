@@ -5,3 +5,6 @@ discord-bot/train.log
 *.csv
 /img
 /pth
+/musdb18
+/input
+/output
