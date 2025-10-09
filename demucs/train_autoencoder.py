@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch import optim
 from torch.utils.data import DataLoader
 import time
+import math
 
 from demucs import Demucs
 from musdb18 import MUSDB18_Denoising
@@ -61,6 +62,7 @@ def main():
 
     start_epoch = 0
     epochs = 50
+    best_loss = math.inf
 
     if model_path:
         checkpoint = torch.load(model_path)
@@ -82,12 +84,15 @@ def main():
     for epoch in range(start_epoch, epochs):
         loss = train(model, dataloader, optimizer, config, epoch)
         scheduler.step(loss)
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'loss': loss
-        }, f'demucs_{model_date}_{epoch+1:02}.pth')
+        if loss < best_loss:
+            best_loss = loss
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': loss,
+            }, f'demucs_{model_date}_{epoch+1:02}.pth')
+            print(f"Saved demucs_{model_date}_{epoch+1:02}.pth with new best loss of {best_loss}.")
 
 if __name__ == "__main__":
     main()
