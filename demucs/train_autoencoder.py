@@ -15,9 +15,12 @@ def train(model, dataloader, optimizer, config, epoch):
     running = 0
     time_start = time.time()
 
-    for noisy, clean in dataloader:
-        noisy = noisy.cuda()
+    for clean, noisy in dataloader:
         clean = clean.cuda()
+        noisy = noisy.cuda()
+
+        clean = clean / (clean.abs().max(dim=-1, keepdim=True)[0] + 1e-8)
+        noisy = noisy / (noisy.abs().max(dim=-1, keepdim=True)[0] + 1e-8)
 
         est_clean = model(noisy)
 
