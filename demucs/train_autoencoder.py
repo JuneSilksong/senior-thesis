@@ -8,6 +8,7 @@ import time
 
 from demucs import Demucs
 from musdb18 import MUSDB18_Denoising
+from loss import si_sdr_loss, mrstft_loss
 
 time_initial = time.time()
 
@@ -29,7 +30,9 @@ def train(model, dataloader, optimizer, config, epoch):
 
         est_clean = model(noisy)
 
-        loss = F.l1_loss(est_clean, clean)
+        loss_sisdr = si_sdr_loss(est_clean, clean)
+        loss_stft = mrstft_loss(est_clean, clean)
+        loss = loss_sisdr + 0.5 * loss_stft
 
         optimizer.zero_grad()
         loss.backward()
