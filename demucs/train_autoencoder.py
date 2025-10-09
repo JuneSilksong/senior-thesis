@@ -3,12 +3,11 @@ np.float_ = np.float64
 import torch
 import torch.nn.functional as F
 from torch import optim
-from torch.utils.data import DataLoader, Subset
-import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
 import time
 
 from demucs import Demucs
-from musdb18 import MUSDB18_Denoising, compare_sources
+from musdb18 import MUSDB18_Denoising
 
 time_initial = time.time()
 
