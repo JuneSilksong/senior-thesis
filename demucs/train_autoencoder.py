@@ -17,13 +17,37 @@ model_date = '20250925' #yyyymmdd
 model_epoch = None #'00' # 2sf
 model_path = None #f'/home/user/Github/senior-thesis/demucs_{model_date}_{model_epoch}.pth'
 
-def train():
+def train(model, dataloader, optimizer, config, epoch):
+    batch_i = 0
+    running = 0
+    time_start = None
+    time_finish = None
+
+    for noisy, clean in dataloader:
+        noisy = noisy.cuda()
+        clean = clean.cuda()
+
+        est_clean = model(noisy)
+
+        loss = F.l1_loss(est_clean, clean)
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        batch_i += 1
+        
+        if (batch_i % num_workers == 0):
+            time_finish = time.time()
+            print(f"Epoch {epoch+1}/{config['epochs']}, Batch {batch_i}/{config['batches']}, Running Loss = {loss.item():.4f}, Duration = {(time_finish-time_start):.4f}")
+            time_start = time.time()
+    
+    return running / len(dataloader)
+
+def main():
     train_dataset = MUSDB18_Denoising(split="train")
     train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True, drop_last=True, num_workers=num_workers, pin_memory=True)
     print(f"Loaded {len(train_dataset)} training tracks.")
-
-    time_start = None
-    time_finish = None
 
     model = Demucs(sources=["mix"])
 
@@ -45,30 +69,13 @@ def train():
         start_epoch = checkpoint['epoch'] + 1
         print(f"Starting loaded model from epoch {start_epoch}")
 
+    config = {
+        'epochs': epochs,
+        'batches': batches
+    }
+
     for epoch in range(start_epoch,epochs):
-        batch_i = 0
-        for noisy, clean in train_loader:
-            noisy = noisy.cuda()
-            clean = clean.cuda()
-
-            est_clean = model(noisy)
-
-            loss = F.l1_loss(est_clean, clean)
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            batch_i += 1
-            
-            #print(f"Forward split: {(time_forward-time_start if time_start else time_forward):.4f}")
-            #print(f"Backward split {(time_backward-time_forward):.4f}")
-            if (batch_i % num_workers == 0):
-                time_finish = time.time()
-                print(f"Epoch {epoch+1}/{epochs}, Batch {batch_i}/{batches}, Loss = {loss.item():.4f}, Duration = {(time_finish-time_start if time_start else time_finish):.4f}")
-                time_start = time.time()
-            
-        
+        loss = train(model, train_loader, optimizer, config, epoch)
         print(f"Completed Epoch {epoch+1}/{epochs} with Loss = {loss.item():.4f}")
         torch.save({
             'epoch': epoch,
@@ -77,4 +84,4 @@ def train():
         }, f'demucs_{model_date}_{epoch+1:02}.pth')
 
 if __name__ == "__main__":
-    train()
+    main()
