@@ -80,7 +80,7 @@ def main():
         'num_workers': num_workers
     }
 
-        print(f"Completed Epoch {epoch+1}/{epochs} with Loss = {loss:.4f}")
+    print(f"Completed Epoch {epoch+1}/{epochs} with Loss = {loss:.4f}")
     for epoch in range(start_epoch, epochs):
         loss = train(model, dataloader, optimizer, config, epoch)
         scheduler.step(loss)
