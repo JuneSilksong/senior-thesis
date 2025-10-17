@@ -12,7 +12,7 @@ def si_sdr_loss(est, ref, eps=1e-8):
 def mrstft_loss(est, ref):
     """Multi-resolution STFT loss."""
     total = 0
-    configs = [(1024, 256), (2048, 512), (512, 128)]
+    configs = [(1024, 120), (2048, 240), (512, 50)]
     for n_fft, hop in configs:
         est_stft = torch.stft(est, n_fft=n_fft, hop_length=hop,
                               return_complex=True, center=True)
