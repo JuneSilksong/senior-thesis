@@ -61,6 +61,12 @@ def main():
     num_workers = 16
 
     dataset = MUSDB18_Denoising(split="train")
+    log_file = f"demucs_{model_date}_trainlog.csv"
+    if not os.path.exists(log_file):
+        with open(log_file, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["epoch", "total_loss", "si_sdr_loss", "stft_loss"])
+
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True, drop_last=True, num_workers=num_workers, pin_memory=True)
     print(f"Loaded {len(dataset)} training tracks.")
 
@@ -94,6 +100,10 @@ def main():
         loss, loss_sisdr, loss_stft = train(model, dataloader, optimizer, config, epoch)
         scheduler.step(loss)
         print(f"Completed Epoch {epoch+1}/{epochs} with Loss = {loss:.4f}, SI-SDR = {loss_sisdr:.4f}, STFT = {loss_stft:.4f}")
+
+        with open(log_file, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([epoch + 1, loss, loss_sisdr, loss_stft])
 
         if loss < best_loss:
             best_loss = loss
