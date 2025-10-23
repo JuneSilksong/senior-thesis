@@ -63,13 +63,13 @@ def main():
     model_path = None #f'/home/user/Github/senior-thesis/demucs_{model_date}_{model_epoch}.pth'
     num_workers = 16
 
-    dataset = MUSDB18_Denoising(split="train")
     log_file = f"demucs_{model_date}_trainlog.csv"
     if not os.path.exists(log_file):
         with open(log_file, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["epoch", "total_loss", "si_sdr_loss", "stft_loss"])
 
+    dataset = MUSDB18_Denoising(split="train", noise_types=("gaussian","pink","crackle"))
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True, drop_last=True, num_workers=num_workers, pin_memory=True)
     print(f"Loaded {len(dataset)} training tracks.")
 
