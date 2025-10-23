@@ -57,6 +57,9 @@ def train(model, dataloader, optimizer, config, epoch):
 def main():
     model_date = '20250925' #yyyymmdd
     model_epoch = None #'00' # 2sf
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+
     model_path = None #f'/home/user/Github/senior-thesis/demucs_{model_date}_{model_epoch}.pth'
     num_workers = 16
 
@@ -84,6 +87,12 @@ def main():
         checkpoint = torch.load(model_path)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+        for state in optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.cuda()
+
         start_epoch = checkpoint['epoch'] + 1
         print(f"Starting loaded model from epoch {start_epoch}")
 
