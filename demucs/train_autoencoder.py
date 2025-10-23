@@ -6,6 +6,8 @@ from torch import optim
 from torch.utils.data import DataLoader
 import time
 import math
+import csv
+import os
 
 from demucs import Demucs
 from musdb18 import MUSDB18_Denoising
@@ -14,6 +16,9 @@ from loss import si_sdr_loss, mrstft_loss
 def train(model, dataloader, optimizer, config, epoch):
     batch_i = 0
     running = 0
+    running_sisdr = 0
+    running_stft = 0
+    running_l1 = 0
     time_start = time.time()
 
     for clean, noisy in dataloader:
@@ -27,7 +32,8 @@ def train(model, dataloader, optimizer, config, epoch):
 
         loss_sisdr = si_sdr_loss(est_clean, clean)
         loss_stft = mrstft_loss(est_clean, clean)
-        loss = loss_sisdr + 0.5 * loss_stft
+        loss_l1 = F.l1_loss(est_clean, clean)
+        loss = 0 * loss_sisdr + 1 * loss_stft
 
         optimizer.zero_grad()
         loss.backward()
@@ -36,13 +42,17 @@ def train(model, dataloader, optimizer, config, epoch):
 
         batch_i += 1
         running += loss.item()
+        running_sisdr += (-loss_sisdr.item())
+        running_stft += loss_stft.item()
+        running_l1 += loss_l1.item()
+
         
         if (batch_i % config['num_workers'] == 0):
             time_finish = time.time()
-            print(f"Epoch {epoch+1}/{config['epochs']}, Batch {batch_i}/{config['batches']}, Running Loss = {loss.item():.4f}, Duration = {(time_finish-time_start):.4f}")
+            print(f"Epoch {epoch+1}/{config['epochs']}, Batch {batch_i}/{config['batches']}, Loss = {loss.item():.4f}, SI-SDR: {-loss_sisdr.item():.4f}, STFT: {loss_stft.item():.4f}, L1: {loss_l1.item():.4f}, Duration = {(time_finish-time_start):.4f}")
             time_start = time.time()
     
-    return running / len(dataloader)
+    return running / len(dataloader), running_sisdr / len(dataloader), running_stft / len(dataloader)
 
 def main():
     model_date = '20250925' #yyyymmdd
@@ -80,10 +90,11 @@ def main():
         'num_workers': num_workers
     }
 
-    print(f"Completed Epoch {epoch+1}/{epochs} with Loss = {loss:.4f}")
     for epoch in range(start_epoch, epochs):
-        loss = train(model, dataloader, optimizer, config, epoch)
+        loss, loss_sisdr, loss_stft = train(model, dataloader, optimizer, config, epoch)
         scheduler.step(loss)
+        print(f"Completed Epoch {epoch+1}/{epochs} with Loss = {loss:.4f}, SI-SDR = {loss_sisdr:.4f}, STFT = {loss_stft:.4f}")
+
         if loss < best_loss:
             best_loss = loss
             torch.save({
