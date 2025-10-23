@@ -208,37 +208,31 @@ class MUSDB18_Denoising(Dataset):
         start_sample = int(start * self.sample_rate)
         end_sample = start_sample + int(self.segment * self.sample_rate)
 
+        # Mix
         if self.mode == "mix":
             clean_audio = track.audio[start_sample:end_sample]
             clean = torch.tensor(clean_audio.T, dtype=torch.float32)
-
             noisy_audio = clean_audio.copy()
+
             if random.random() < self.noise_prob:
-                # decide how many noises to apply
-                multi_noise_prob = random.random()
-                if multi_noise_prob < 0.6:
-                    n_types = 1
-                elif multi_noise_prob < 0.9:
-                    n_types = 2
-                else:
-                    n_types = 3
-                chosen = random.sample(self.noise_types, n_types)
-                for nt in chosen:
+                for nt in self.noise_types:
                     noisy_audio = self.add_noise(noisy_audio, noise_type=nt)
 
             noisy = torch.tensor(noisy_audio.T, dtype=torch.float32)
             return noisy, clean
 
+        # Stems
         elif self.mode == "stems":
             clean_stems, noisy_stems = [], []
+
             for name in self.source_names:
                 src_audio = track.targets[name].audio[start_sample:end_sample]
                 noisy_audio = src_audio.copy()
+                
                 if random.random() < self.noise_prob:
-                    n_types = 1 if random.random() < 0.8 else 2
-                    chosen = random.sample(self.noise_types, n_types)
-                    for nt in chosen:
+                    for nt in self.noise_types:
                         noisy_audio = self.add_noise(noisy_audio, noise_type=nt)
+
                 clean_stems.append(torch.tensor(src_audio.T, dtype=torch.float32))
                 noisy_stems.append(torch.tensor(noisy_audio.T, dtype=torch.float32))
 
@@ -247,7 +241,9 @@ class MUSDB18_Denoising(Dataset):
             return noisy_stems, clean_stems
 
     def add_noise(self, audio, noise_type=None):
-        """Apply noise/reverb at target SNR."""
+        """
+        Apply noise/reverb at target SNR.
+        """
         if noise_type is None:
             noise_type = random.choice(self.noise_types)
 
@@ -275,15 +271,8 @@ class MUSDB18_Denoising(Dataset):
     def apply_reverb(self, audio, wet=0.5):
         """
         Apply synthetic reverb with loudness normalization.
-        
-        Parameters
-        ----------
-        audio : np.ndarray, shape (T, C)
-            Input stereo/mono audio in [-1, 1].
-        wet : float (0.0–1.0)
-            Reverb mix. 0 = dry only, 1 = wet only.
         """
-        ir_len = random.randint(20000, 40000)  # samples
+        ir_len = random.randint(20000, 40000)  # about 0.5 to 1 second of reverb
         ir = np.random.randn(ir_len) * np.exp(-np.linspace(0, 3, ir_len))  # decaying IR
         ir /= np.max(np.abs(ir) + 1e-6)  # normalize IR peak
 
@@ -293,15 +282,15 @@ class MUSDB18_Denoising(Dataset):
             rev.append(rev_ch)
         rev = np.stack(rev, axis=1)
 
-        # --- Loudness normalization ---
+        # loudness norm
         in_rms = np.sqrt(np.mean(audio**2)) + 1e-6
         out_rms = np.sqrt(np.mean(rev**2)) + 1e-6
         rev = rev * (in_rms / out_rms)
 
-        # --- Wet/Dry Mix ---
+        # wetness
         out = (1 - wet) * audio + wet * rev
 
-        # Final safety: prevent clipping
+        # prevent clipping
         max_val = np.max(np.abs(out))
         if max_val > 1.0:
             out = out / max_val
